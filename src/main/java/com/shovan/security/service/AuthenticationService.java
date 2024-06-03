@@ -33,6 +33,10 @@ public class AuthenticationService {
 
         private final AuthenticationManager authenticationManager;
 
+        private final TokenStoreService tokenStoreService;
+
+        private static final long TOKEN_EXPIRATION_TIME = 1000 * 60 * 24;
+
         public AuthenticationResponse register(RegisterRequest request) {
 
                 if (userRepository.findByEmail(request.getEmail()).isPresent()) {
@@ -50,6 +54,7 @@ public class AuthenticationService {
 
                 userRepository.save(user);
                 String token = jwtService.generateToken(user);
+                tokenStoreService.storeToken(user.getEmail(), token, TOKEN_EXPIRATION_TIME);
                 return AuthenticationResponse.builder().token(token).build();
         }
 
@@ -64,7 +69,29 @@ public class AuthenticationService {
                         throw new BadCredentialsException("Invalid credentials");
                 }
 
+                if (tokenStoreService.isTokenPresent(user.getEmail())) {
+                        String token = tokenStoreService.getToken(user.getEmail());
+                        return AuthenticationResponse.builder().token(token).build();
+                }
+
                 var jwtToken = jwtService.generateToken(user);
+                tokenStoreService.storeToken(user.getEmail(), jwtToken, TOKEN_EXPIRATION_TIME);
+
+                return AuthenticationResponse.builder()
+                                .token(jwtToken)
+                                .build();
+        }
+
+        public void logout(String email) {
+                tokenStoreService.deleteToken(email);
+        }
+
+        public AuthenticationResponse refreshToken(String email) {
+                var user = userRepository.findByEmail(email)
+                                .orElseThrow();
+
+                var jwtToken = jwtService.generateToken(user);
+                tokenStoreService.storeToken(email, jwtToken, TOKEN_EXPIRATION_TIME);
 
                 return AuthenticationResponse.builder()
                                 .token(jwtToken)
