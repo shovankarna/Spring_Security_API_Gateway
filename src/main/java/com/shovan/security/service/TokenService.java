@@ -2,10 +2,12 @@ package com.shovan.security.service;
 
 import java.util.Optional;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import com.shovan.security.entity.Token;
 import com.shovan.security.entity.User;
+import com.shovan.security.error.ApiException;
 import com.shovan.security.repository.TokenRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -29,7 +31,7 @@ public class TokenService {
 
     public void revokeToken(String token) {
         Token existingToken = tokenRepository.findByToken(token)
-                .orElseThrow(() -> new IllegalArgumentException("Invalid token"));
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Invalid token"));
         existingToken.setRevoked(true);
         tokenRepository.save(existingToken);
     }

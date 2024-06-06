@@ -1,5 +1,6 @@
 package com.shovan.security.service;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -14,6 +15,7 @@ import com.shovan.security.dto.PasswordResetRequest;
 import com.shovan.security.dto.RegisterRequest;
 import com.shovan.security.entity.Role;
 import com.shovan.security.entity.User;
+import com.shovan.security.error.ApiException;
 import com.shovan.security.repository.RoleRepository;
 import com.shovan.security.repository.UserRepository;
 
@@ -40,8 +42,9 @@ public class AuthenticationService {
         public AuthenticationResponse register(RegisterRequest request) {
 
                 if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-                        throw new IllegalArgumentException("Email already in use");
+                        throw new ApiException(HttpStatus.CONFLICT, "Email already in use");
                 }
+
                 User user = new User();
                 user.setFirstName(request.getFirstName());
                 user.setLastName(request.getLastName());
@@ -49,7 +52,7 @@ public class AuthenticationService {
                 user.setPassword(passwordEncoder.encode(request.getPassword()));
 
                 Role userRole = roleRepository.findByName("ROLE_USER")
-                                .orElseThrow(() -> new IllegalArgumentException("User role not found"));
+                                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User role not found"));
                 user.getRoles().add(userRole);
 
                 userRepository.save(user);
@@ -60,64 +63,65 @@ public class AuthenticationService {
 
         public AuthenticationResponse authenticate(AuthenticationRequest request) {
 
-                authenticationManager.authenticate(
-                                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
+                try {
+                        authenticationManager.authenticate(
+                                        new UsernamePasswordAuthenticationToken(request.getEmail(),
+                                                        request.getPassword()));
+                } catch (BadCredentialsException e) {
+                        throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
+                }
 
                 User user = userRepository.findByEmail(request.getEmail())
-                                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-                if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-                        throw new BadCredentialsException("Invalid credentials");
-                }
+                                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
 
                 if (tokenStoreService.isTokenPresent(user.getEmail())) {
                         String token = tokenStoreService.getToken(user.getEmail());
                         return AuthenticationResponse.builder().token(token).build();
                 }
 
-                var jwtToken = jwtService.generateToken(user);
+                String jwtToken = jwtService.generateToken(user);
                 tokenStoreService.storeToken(user.getEmail(), jwtToken, TOKEN_EXPIRATION_TIME);
 
-                return AuthenticationResponse.builder()
-                                .token(jwtToken)
-                                .build();
+                return AuthenticationResponse.builder().token(jwtToken).build();
         }
 
         public void logout(String email) {
+                if (!userRepository.findByEmail(email).isPresent()) {
+                        throw new ApiException(HttpStatus.NOT_FOUND, "User not found");
+                }
                 tokenStoreService.deleteToken(email);
         }
 
         public AuthenticationResponse refreshToken(String email) {
-                var user = userRepository.findByEmail(email)
-                                .orElseThrow();
+                User user = userRepository.findByEmail(email)
+                                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
 
-                var jwtToken = jwtService.generateToken(user);
+                String jwtToken = jwtService.generateToken(user);
                 tokenStoreService.storeToken(email, jwtToken, TOKEN_EXPIRATION_TIME);
 
-                return AuthenticationResponse.builder()
-                                .token(jwtToken)
-                                .build();
+                return AuthenticationResponse.builder().token(jwtToken).build();
         }
 
         public void resetPassword(PasswordResetRequest request) {
                 User user = userRepository.findByEmail(request.getEmail())
-                                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+                                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
                 user.setPassword(passwordEncoder.encode(request.getNewPassword()));
                 userRepository.save(user);
         }
 
         public void enableDisableAccount(EnableDisableRequest request) {
                 User user = userRepository.findByEmail(request.getEmail())
-                                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+                                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
                 user.setEnabled(request.isEnabled());
                 userRepository.save(user);
         }
 
         public void assignRoleToUser(String email, String roleName) {
                 User user = userRepository.findByEmail(email)
-                                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+                                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
 
                 Role role = roleRepository.findByName(roleName)
-                                .orElseThrow(() -> new IllegalArgumentException("Role not found"));
+                                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Role not found"));
 
                 user.getRoles().add(role);
                 userRepository.save(user);
@@ -125,7 +129,7 @@ public class AuthenticationService {
 
         public void deleteUser(String email) {
                 User user = userRepository.findByEmail(email)
-                                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+                                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
                 userRepository.delete(user);
         }
 
