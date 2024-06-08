@@ -19,6 +19,10 @@ spring:
     redis:
       host: localhost
       port: 6379
+
+  main:
+    web-application-type: reactive
+    allow-bean-definition-overriding: true
   # sql:
   #   init:
   #     mode: always
